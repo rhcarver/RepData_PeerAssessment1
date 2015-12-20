@@ -7,19 +7,98 @@ output:
 
 
 ## Loading and preprocessing the data
-
-
-
+The chunk below sets the working directory, reads the data into an object called "activ" and then creates a data frame 'totsteps' containing the sum total of all steps taken per day, dropping missing cases.
+```{r}
+setwd("~/Dropbox/In process/MyRWork")
+activ <- read.csv("activity.csv", header = TRUE)
+# Need to express per day
+library(dplyr)
+byday <- group_by(activ, date)
+totsteps <- summarize(byday,tot_steps=sum(steps, na.rm=TRUE))
+```
 ## What is mean total number of steps taken per day?
-
-
+In this section, we first create a histogram of the number of steps per day, and then go on to compute and report the mean and median number of steps per day.
+``` {r}
+hist(totsteps$tot_steps, main="Total Steps per Day")
+mean_tot <- summarize(totsteps, m = mean(tot_steps))
+med_tot <- median(totsteps$tot_steps)
+```
+The mean number of steps per day is `r mean_tot` and the median is `r med_tot`
 
 ## What is the average daily activity pattern?
+To identify the daily pattern, it is first necessary to summarize the mean number of steps per 5-minute interval. I did this again using dplyr and omitting missing data.
+Once the data were prepared, it's a small matter to create a time series plot. Note that this graph uses a data frame called 'mean_step' which contains the mean number of steps per 5-minute interval for the 288 intervals.  
+``` {r}
+by_int <- group_by(activ, interval)
+mean_step <- summarize(by_int, mean_steps=mean(steps, na.rm=TRUE))
 
+plot(mean_step$interval, mean_step$mean_steps, type="l", 
+     main="Mean Steps per 5-minute Interval", xlab="Interval", 
+     ylab="Average # Steps")
 
+#Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+i <-which.max(mean_step$mean_steps)
+maxint <- mean_step$interval[i]
 
-## Imputing missing values
+```
+From the plot we can see that `r maxint` is the most active of the day, on average. 
 
+## Imputing missing values and re-do first part of the analysis
+As specified in the assignment, first I computed the number of missing values in the dataset, and then proceed to impute values for the missing cases. For this assignment, I decided to replace missing values with the mean number of steps for the corresponding 5-minute interval.
 
+After a couple of unsuccessful approaches, I consulted the class 
+discussion, and followed the recommendation of Community TA Sebastián Jojoa Cruz. Thanks Sebastián! 
+
+Note one odd calculation in this code: the vector 'ints' is meant to point to the means within the data frame of intervals; hence I wanted ints to map an interval number to a *row numbers* in that data frame. Since the intervals are numbered 5, 10, 15 etc. we can map an interval number to a row number muliplying the interval number by .2 and adding 1.
+``` {r}
+#Calculate and report the total number of missing values in the dataset (i.e. the total number of rows with NAs)
+nas <- sum(is.na(activ$steps))
+activ$stepsnm <- activ$steps
+ind <- is.na(activ$stepsnm) # vector of rows with missing observations
+ints <- 1+.2* activ$interval[ind] # identify row of intervals for each missing obs
+activ$stepsnm[ind] <- mean_step$mean_steps[ints] #swap NA with mean for interval 
+```
+In the original dataset, there were `r nas` missing cases for the Number of Steps variable.
+
+Now, having replaced the missing observations with the means for each interval, we repeat the first portion of the analysis.
+```{r}
+byday2 <- group_by(activ, date)
+totsteps2 <- summarize(byday2,tot_steps2=sum(stepsnm, na.rm=TRUE))
+hist(totsteps2$tot_steps2, main="Total Steps per Day", 
+        xlab="Steps including Imputed Values")
+mean_tot2 <- summarize(totsteps2, m2 = mean(tot_steps2))
+med2 <-median(totsteps2$tot_steps2)
+```
+Here we see that the histogram is slightly more symmetric and mound-shaped than the original histogram. 
+
+The new mean is `r mean_tot2` compared with the earlier value of `r mean_tot`.
+
+The new median is `r med2`, compared with the earlier value of `r med_tot`-- no change at all.
 
 ## Are there differences in activity patterns between weekdays and weekends?
+For this final portion of the analysis, it was necessary to create a factor variable with two levels: "weekend" and "weekday", and then recreate the daily activity pattern graphs in two panels, separating weekends and weekdays.
+
+I chose to use the lattice package to create the plot. 
+```{r}
+wend <- c("Saturday", "Sunday")
+
+activ <- activ %>% 
+        mutate(day = ifelse(weekdays(as.Date(activ$date)) %in% wend, 
+                 "Weekend", "Weekday"))
+
+activ$day <- as.factor(activ$day)
+
+
+#Make a panel plot containing a time series plot (i.e. type = "l") of the 5-minute #interval (x-axis) and the average number of steps taken, averaged across all weekday # days or weekend days (y-axis). 
+by_int2 <- group_by(activ, day, interval)
+mean_step2 <- summarize(by_int2, msteps =mean(stepsnm, na.rm=TRUE))
+
+library(lattice)
+xyplot(msteps ~ interval | day, data=mean_step2, type = "l",
+       main="Comparison of daily actiivty patterns on Weekends and Weekdays", 
+       ylab="Mean # of Steps", layout = c (1,2))
+
+```
+
+
+We note the general similarity in shape, with one particular difference. The weekend pattern has an addition spike roughly between intervals 1100-1300 that does not appear in such a pronounced way on weekdays.
